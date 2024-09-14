@@ -22,7 +22,7 @@ export function best_target(ns, arr) {
       gainRootAccess(ns, server);
     }
 
-    if (ns.hasRootAccess(server) && ns.getServerRequiredHackingLevel(server) <= ns.getHackingLevel() && !ns.getPurchasedServers().includes(server) && ns.getServerMoneyAvailable(server)) {
+    if (ns.hasRootAccess(server) && ns.getServerRequiredHackingLevel(server) <= ns.getHackingLevel()) {
       list.push(server);
     }
   })
@@ -33,7 +33,7 @@ export function best_target(ns, arr) {
     little_results[i] = ns.getServerMaxMoney(target) * ns.hackAnalyze(target);
   })
 
-  return [list[maxElement(results)], list[maxElement(little_results)],list];
+  return [list[maxElement(results)], list[maxElement(little_results)], list];
 }
 export async function main(ns) {
   let reserved_RAM = ns.args[0];
@@ -60,24 +60,26 @@ export async function main(ns) {
     const grow_time = ns.getGrowTime(hack_target);
     const hack_time = ns.getHackTime(hack_target);
 
-    await Promise.all(servers.map(async (server,idx) => {
-      const ram = await ns.getServerMaxRam(server) - await ns.getServerUsedRam(server);
-      if (ram >= 8 && server != 'home') {
+    await Promise.all(servers.map(async (server, idx) => {
+      const totalRAM = await ns.getServerMaxRam(server);
+      // const ram =  totalRAM - await ns.getServerUsedRam(server);
+      if (totalRAM >= 8) {
         await hackServer(ns, server, hack_target, {
-          grow_delay: weaken_time - grow_time - 2,
+          grow_delay: weaken_time - grow_time + 1,
           hack_delay: weaken_time - hack_time - 1,
-          ram
+          weaken_delay: 2,
+          totalRAM
         });
-      }else{
+      } else {
         await prepServer(ns, server, mini_target, {
           grow_delay: weaken_time - grow_time - 2,
           hack_delay: weaken_time - hack_time - 1,
-          ram
+          totalRAM
         });
       }
     }))
 
-    await ns.sleep(10);
+    await ns.sleep(100);
   }
 }
 
@@ -89,24 +91,33 @@ async function scpFiles(ns, target) {
 }
 
 async function hackServer(ns, server, target, p) {
-  const threads = Math.floor(p.ram / 1.75);
+  const ram =  p.totalRAM - await ns.getServerUsedRam(server);
+  const threads = Math.floor(ram/ 1.75);
 
-  const grow_threads = Math.floor(threads * 0.25);
-  const hack_threads = Math.floor(threads * 0.25);
-  const weaken_threads = Math.floor(threads * 0.5);
+  let grow_threads = Math.floor(threads * 0.25);
+  let hack_threads = Math.floor(threads * 0.25);
+  let weaken_threads = Math.floor(threads * 0.25);
+  if (grow_threads < 1) grow_threads = 1;
+  if (hack_threads < 1) hack_threads = 1;
+  if (weaken_threads < 1) weaken_threads = 1;
 
-
-  ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, target, 1);
-  ns.exec('targeted-grow.js', server, grow_threads, grow_threads, p.grow_delay, target, 1);
-  ns.exec('targeted-hack.js', server, hack_threads, hack_threads, p.hack_delay, target, 1);
+  if (!ns.scriptRunning('targeted-weaken.js', server)) {
+    ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, 0, target, 1);
+    ns.exec('targeted-hack.js', server, hack_threads, hack_threads, p.hack_delay, target, 1);
+    ns.exec('targeted-grow.js', server, grow_threads, grow_threads, p.grow_delay, target, 1);
+    ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, p.weaken_delay, target, 1);
+  }
 }
 
 async function prepServer(ns, server, target, p) {
+  const threads = Math.floor(p.totalRAM / 1.75);
 
-  const grow_threads = 1;
-  const weaken_threads = 1;
+  let grow_threads = Math.floor(threads * 0.5);
+  let weaken_threads = Math.floor(threads * 0.5);
+  if (grow_threads < 1) grow_threads = 1;
+  if (weaken_threads < 1) weaken_threads = 1;
 
 
-  ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, target, 1);
+  ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, 0, target, 1);
   ns.exec('targeted-grow.js', server, grow_threads, grow_threads, p.grow_delay, target, 1);
 }
